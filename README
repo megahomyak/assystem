@@ -1,0 +1,1 @@
+ASSystem is A Storage System that's total ASS. It's a simple key-value storage, as simple as I could make it, stored in a single file. No running daemons, complex APIs or outer dependencies, just plain and simple (and rather dumb) `get`, `insert`, `remove` and `list`.
