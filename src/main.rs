@@ -1,6 +1,6 @@
-/// A sort of "memory allocator" for files
+/// Sort of a "dynamic memory allocator" for files
 struct Fallocator {
-
+    heap_index: u64,
 }
 const FILE_FORMAT_NAME: [char; 7] = ['A', 'S', 'S', ' ', 'v', '1', '\0'];
 type FileIndex = u64;
