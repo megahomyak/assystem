@@ -6,3 +6,5 @@ This allocator, unfortunately, assumes two things:
 * The database size will never be bigger than 2**64 bytes (which is around 16384 pebibytes) - if it will be, this thing will go into Undefined Behavior
 * There will always be enough storage for extending the database - if there won't be, this thing will just crash
 Both issues should be easily fixable, so it's not a design flaw. The author doesn't want to fix these issues right now because they don't bother him
+
+There's also a possibility of database file corruption if any of the modifying database operations gets interrupted. IDK how to work around this one yet
