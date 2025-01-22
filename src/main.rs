@@ -5,11 +5,14 @@ struct Fallocator {
 const FILE_FORMAT_NAME: [char; 7] = ['A', 'S', 'S', ' ', 'v', '1', '\0'];
 type FileIndex = u64;
 /*
-Database structure:
-all: [format name (length added to every index)] [fixed memory (like stack)] [dynamic memory (like heap)]
-
-Dynamic memory structure:
-block: [prev block index] [block length] [flags: whether it's a free block and whether it's a last block]
+Memory structure:
+* File format name (['A', 'S', 'S', ' ', 'v', '1', '\0'])
+* Root node 0 index (may be null)
+* Root node 1 index (may be null)
+* Root node content (may be null)
+* First block flags
+* After first block index (non-null)
+* Heap (with blocks: [block flags, after block index (non-null), prev block index (non-null)])
 */
 impl Fallocator {
     fn allocate(&mut self, bytes_amount: u64) -> FileIndex {
