@@ -14,18 +14,26 @@ Flags: is_free, is_end
 
 const IS_FREE_MASK: u8 = 0b1000_0000u8;
 const IS_END_MASK: u8 = 0b0100_0000u8;
+const IS_PADDING_MASK: u8 = 0b0010_0000u8;
 const FILE_FORMAT_NAME_LENGTH: u8 = 7;
 const FILE_FORMAT_NAME: [u8; FILE_FORMAT_NAME_LENGTH as usize] =
     [b'A', b'S', b'S', b' ', b'v', b'1', b'\0'];
 mod offsets {
-    pub const FILE_FORMAT_NAME: u64 = 0;
-    pub const ROOT_NODE_0_BRANCH_INDEX: u64 =
-        FILE_FORMAT_NAME + super::FILE_FORMAT_NAME_LENGTH as u64;
-    pub const ROOT_NODE_1_BRANCH_INDEX: u64 = ROOT_NODE_0_BRANCH_INDEX + 8;
-    pub const ROOT_NODE_CONTENT_INDEX: u64 = ROOT_NODE_1_BRANCH_INDEX + 8;
-    pub const FIRST_BLOCK_FLAGS: u64 = ROOT_NODE_CONTENT_INDEX + 8;
-    pub const AFTER_FIRST_BLOCK_INDEX: u64 = FIRST_BLOCK_FLAGS + 1;
-    pub const HEAP: u64 = AFTER_FIRST_BLOCK_INDEX + 8;
+    pub const FILE_FORMAT_NAME: u8 = 0;
+    pub const ROOT_NODE_0_BRANCH_INDEX: u8 = FILE_FORMAT_NAME + super::FILE_FORMAT_NAME_LENGTH;
+    pub const ROOT_NODE_1_BRANCH_INDEX: u8 = ROOT_NODE_0_BRANCH_INDEX + 8;
+    pub const ROOT_NODE_CONTENT_INDEX: u8 = ROOT_NODE_1_BRANCH_INDEX + 8;
+    pub const FIRST_BLOCK_FLAGS: u8 = ROOT_NODE_CONTENT_INDEX + 8;
+    pub const AFTER_FIRST_BLOCK_INDEX: u8 = FIRST_BLOCK_FLAGS + 1;
+    pub const HEAP: u8 = AFTER_FIRST_BLOCK_INDEX + 8;
+}
+
+mod sizes {
+    pub const BLOCK_INDEX: u8 = 1;
+    pub const BLOCK_LENGTH: u8 = 8;
+    pub const BLOCK_PREV: u8 = 8;
+
+    pub const BLOCK: u8 = BLOCK_INDEX + BLOCK_LENGTH + BLOCK_PREV;
 }
 
 type FileIndex = u64;
@@ -39,10 +47,10 @@ pub enum OpeningError {
     IO(std::io::Error),
 }
 impl ASS {
-    fn read<const N: usize>(&mut self) -> [u8; N] {
+    fn read<const N: usize>(&mut self) -> ([u8; N], u64) {
         let mut result = [0u8; N];
         self.file.read_exact(&mut result).unwrap();
-        result
+        (result, N)
     }
     fn write(&mut self, data: &[u8]) {
         self.file.write_all(data).unwrap();
@@ -54,45 +62,65 @@ impl ASS {
     fn write_flags(&mut self, index: u8) {
         self.write(&[index]);
     }
-    fn read_u8(&mut self) -> u8 {
-        self.read::<1>()[0]
+    fn read_u8(&mut self) -> (u8, u64) {
+        let r = self.read::<1>();
+        (r.0[0], r.1)
     }
-    fn read_u64(&mut self) -> u64 {
-        u64::from_be_bytes(self.read::<8>())
-    }
-    fn tell(&mut self) -> u64 {
-        self.file.seek(SeekFrom::Current(0)).unwrap()
-    }
-    fn seek(&mut self, index: u64) {
-        self.file.seek(SeekFrom::Start(index)).unwrap();
+    fn read_u64(&mut self) -> (u64, u64) {
+        let r = self.read::<8>();
+        (u64::from_be_bytes(r.0), r.1)
     }
     fn alloc(&mut self, amount: u64) -> FileIndex {
-        self.seek(offsets::FIRST_BLOCK_FLAGS);
-        let mut flags = self.read_u8();
-        let mut length = self.read_u64();
+        self.file
+            .seek(SeekFrom::Start(offsets::FIRST_BLOCK_FLAGS as u64));
         loop {
+            let (flags, after_index) = self.read_u8();
+            if flags & IS_PADDING_MASK != 0 {
+                continue;
+            }
+            let (length, after_index_and_length) = self.read_u64();
+            if after_index_and_length != offsets::HEAP as u64 {
+                self.file.seek(SeekFrom::Current(8));
+            }
             if flags & IS_FREE_MASK != 0 {
                 if length == amount {
+                    self.file.seek(SeekFrom::Start(after_index_and_length - sizes::BLOCK_INDEX - )).unwrap();
+                    self.write_flags(flags & !IS_FREE_MASK);
+                    self.file.seek(SeekFrom::Current(8)).unwrap();
+                    self.write
                     // repurpose the block
-                } else if length <= amount + 8 + 8 + 1 {
-                    // add a block inside a block
+                } else if amount < length {
+                    // add a block inside a block.
+                    // add a second header in-between if possible,
+                    // add padding in-between otherwise
                 }
             }
             if flags & IS_END_MASK != 0 {
                 if flags & IS_FREE_MASK != 0 {
-                    // extend current block (keep in mind the extra "prev" index)
+                    // extend current block
                 } else {
-                    // go after current block's data (keep in mind the extra "prev" index) and make a new block
+                    self.file
+                        .seek(SeekFrom::Current(length.try_into().unwrap()));
+                    // go after current block's data and make a new block
                 }
-                break;
+                return;
             }
-            self.seek(self.tell() + length);
-            flags = self.read_u8();
-            length = self.read_u64();
+            self.file
+                .seek(SeekFrom::Current(length.try_into().unwrap()));
         }
     }
     /// The index should be valid to prevent database breakage
     fn dealloc(&mut self, index: FileIndex) {}
+    pub fn get(&mut self, key: &[u8]) -> Vec<u8> {
+        if content_index == 1 {
+            return Vec::new();
+        }
+    }
+    pub fn set(&mut self, key: &[u8], value: &[u8]) {
+        if value.len() == 0 {
+            // set "1" as address instead of allocating
+        }
+    }
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, OpeningError> {
         // =()=
         let file = std::fs::OpenOptions::new()
