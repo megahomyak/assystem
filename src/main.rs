@@ -47,10 +47,10 @@ pub enum OpeningError {
     IO(std::io::Error),
 }
 impl ASS {
-    fn read<const N: usize>(&mut self) -> ([u8; N], u64) {
+    fn read<const N: usize>(&mut self) -> [u8; N] {
         let mut result = [0u8; N];
         self.file.read_exact(&mut result).unwrap();
-        (result, N)
+        result
     }
     fn write(&mut self, data: &[u8]) {
         self.file.write_all(data).unwrap();
@@ -62,29 +62,28 @@ impl ASS {
     fn write_flags(&mut self, index: u8) {
         self.write(&[index]);
     }
-    fn read_u8(&mut self) -> (u8, u64) {
-        let r = self.read::<1>();
-        (r.0[0], r.1)
+    fn read_u8(&mut self) -> u8 {
+        self.read::<1>()[0]
     }
-    fn read_u64(&mut self) -> (u64, u64) {
-        let r = self.read::<8>();
-        (u64::from_be_bytes(r.0), r.1)
+    fn read_u64(&mut self) -> u64 {
+        u64::from_be_bytes(self.read::<8>())
     }
     fn alloc(&mut self, amount: u64) -> FileIndex {
+        let mut block_beginning = offsets::FIRST_BLOCK_FLAGS as u64;
         self.file
-            .seek(SeekFrom::Start(offsets::FIRST_BLOCK_FLAGS as u64));
+            .seek(SeekFrom::Start(block_beginning));
         loop {
-            let (flags, after_index) = self.read_u8();
+            let flags = self.read_u8();
             if flags & IS_PADDING_MASK != 0 {
                 continue;
             }
-            let (length, after_index_and_length) = self.read_u64();
-            if after_index_and_length != offsets::HEAP as u64 {
+            let length = self.read_u64();
+            if self.tell() != offsets::HEAP as u64 {
                 self.file.seek(SeekFrom::Current(8));
             }
             if flags & IS_FREE_MASK != 0 {
                 if length == amount {
-                    self.file.seek(SeekFrom::Start(after_index_and_length - sizes::BLOCK_INDEX - )).unwrap();
+                    self.file.seek(SeekFrom::Start(block_beginning)).unwrap();
                     self.write_flags(flags & !IS_FREE_MASK);
                     self.file.seek(SeekFrom::Current(8)).unwrap();
                     self.write
@@ -105,7 +104,7 @@ impl ASS {
                 }
                 return;
             }
-            self.file
+            block_beginning = self.file
                 .seek(SeekFrom::Current(length.try_into().unwrap()));
         }
     }
