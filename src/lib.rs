@@ -245,7 +245,9 @@ impl ASS {
             Some(previous_value)
         };
         let new_content_block_pos = self.alloc(value);
-        self.file.seek(SeekFrom::Start(content_block_pos_pos)).unwrap();
+        self.file
+            .seek(SeekFrom::Start(content_block_pos_pos))
+            .unwrap();
         self.write_u64(new_content_block_pos);
         previous_value
     }
