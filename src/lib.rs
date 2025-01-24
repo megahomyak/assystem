@@ -16,25 +16,8 @@ The first block must be present and empty
 
 const FILE_HEADER: [u8; 7] = *b"ASS v1\0";
 mod offsets {
-    pub mod global {
-        pub const ROOT_NODE: u64 = super::super::FILE_HEADER.len() as u64;
-        pub const BLOCKS: u64 = ROOT_NODE + 24;
-    }
-
-    pub mod node {
-        pub const FALSE_BRANCH_DATA_POS: i64 = 8;
-        pub const CONTENT_BLOCK_POS: i64 = FALSE_BRANCH_DATA_POS + 8;
-    }
-
-    pub mod block {
-        pub const BLOCK_LENGTH: i64 = 8;
-        pub const NEXT_BLOCK_POS: i64 = BLOCK_LENGTH + 8;
-    }
-}
-
-mod sizes {
-    pub const BLOCK: i64 = super::offsets::block::NEXT_BLOCK_POS + 8;
-    pub const NODE: i64 = super::offsets::node::CONTENT_BLOCK_POS + 8;
+    pub const ROOT_NODE: u64 = super::FILE_HEADER.len() as u64;
+    pub const BLOCKS: u64 = ROOT_NODE + 24;
 }
 
 type DataPosition = u64;
@@ -171,9 +154,7 @@ impl<F: ASSFile> ASS<F> {
             return EMPTY_VALUE_BLOCK_POS;
         }
         let data_len: u64 = data.len().try_into().unwrap();
-        self.file
-            .seek(SeekFrom::Start(offsets::global::BLOCKS as u64))
-            .unwrap();
+        self.file.seek(SeekFrom::Start(offsets::BLOCKS)).unwrap();
         loop {
             let _prev_block_pos = self.read_u64();
             let block_length = self.read_u64();
@@ -184,34 +165,26 @@ impl<F: ASSFile> ASS<F> {
                 self.file
                     .seek(SeekFrom::Current(block_length.try_into().unwrap()))
                     .unwrap();
-                self.write_u64(data_pos - sizes::BLOCK as u64);
+                self.write_u64(data_pos - 24);
                 self.write_u64(data_len);
                 self.write_u64(DATA_DOES_NOT_EXIST_POS);
                 self.file.write_all(&data).unwrap();
-                self.file
-                    .seek(SeekFrom::Start(
-                        data_pos - sizes::BLOCK as u64 + offsets::block::NEXT_BLOCK_POS as u64,
-                    ))
-                    .unwrap();
+                self.file.seek(SeekFrom::Start(data_pos - 8)).unwrap();
                 let new_block_pos = data_pos + block_length;
                 self.write_u64(new_block_pos);
                 return new_block_pos;
             } else {
                 let data_pos = self.tell();
                 let free_space_length = (next_block_pos - data_pos) - block_length;
-                if free_space_length >= data_len + sizes::BLOCK as u64 {
+                if free_space_length >= data_len + 24 {
                     self.file
                         .seek(SeekFrom::Current(block_length.try_into().unwrap()))
                         .unwrap();
-                    self.write_u64(data_pos - sizes::BLOCK as u64);
+                    self.write_u64(data_pos - 24);
                     self.write_u64(data_len);
                     self.write_u64(next_block_pos);
                     self.file.write_all(&data).unwrap();
-                    self.file
-                        .seek(SeekFrom::Start(
-                            data_pos - sizes::BLOCK as u64 + offsets::block::NEXT_BLOCK_POS as u64,
-                        ))
-                        .unwrap();
+                    self.file.seek(SeekFrom::Start(data_pos - 8)).unwrap();
                     let new_block_pos = data_pos + block_length;
                     self.write_u64(new_block_pos);
                     if next_block_pos != DATA_DOES_NOT_EXIST_POS {
@@ -233,21 +206,21 @@ impl<F: ASSFile> ASS<F> {
         let prev_block_pos = self.read_u64();
         let _block_length = self.read_u64();
         let next_block_pos = self.read_u64();
-        if next_block_pos != DATA_DOES_NOT_EXIST_POS {
-            self.file.seek(SeekFrom::Start(next_block_pos)).unwrap();
-            self.write_u64(prev_block_pos);
-        } else {
-            self.file.seek(SeekFrom::Start(prev_block_pos + offsets::block::BLOCK_LENGTH as u64)).unwrap();
+        if next_block_pos == DATA_DOES_NOT_EXIST_POS {
+            self.file.seek(SeekFrom::Start(prev_block_pos + 8)).unwrap();
             let prev_block_len = self.read_u64();
             self.file
                 .seek(SeekFrom::Current(
-                    prev_block_len.try_into().unwrap() - offsets::block::BLOCK_LENGTH + sizes::BLOCK
+                    i64::try_from(prev_block_len).unwrap() + 8,
                 ))
                 .unwrap();
             self.file.truncate().unwrap();
+        } else {
+            self.file.seek(SeekFrom::Start(next_block_pos)).unwrap();
+            self.write_u64(prev_block_pos);
         }
         self.file
-            .seek(SeekFrom::Start(prev_block_pos + offsets::block::NEXT_BLOCK_POS as u64))
+            .seek(SeekFrom::Start(prev_block_pos + 16))
             .unwrap();
         self.write_u64(next_block_pos);
     }
@@ -267,12 +240,10 @@ impl<F: ASSFile> ASS<F> {
         self.file.seek(SeekFrom::Current(0)).unwrap()
     }
     pub fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-        self.file
-            .seek(SeekFrom::Start(offsets::global::ROOT_NODE))
-            .unwrap();
+        self.file.seek(SeekFrom::Start(offsets::ROOT_NODE)).unwrap();
         for bit in bits(key) {
             if bit {
-                self.file.seek(SeekFrom::Current(offsets::)).unwrap();
+                self.file.seek(SeekFrom::Current(8)).unwrap();
             }
             let branch_data_position = self.read_u64();
             if branch_data_position == DATA_DOES_NOT_EXIST_POS {
@@ -291,9 +262,7 @@ impl<F: ASSFile> ASS<F> {
         }
     }
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> Option<Vec<u8>> {
-        self.file
-            .seek(SeekFrom::Start(offsets::global::ROOT_NODE))
-            .unwrap();
+        self.file.seek(SeekFrom::Start(offsets::ROOT_NODE)).unwrap();
         for bit in bits(key) {
             if bit {
                 self.file.seek(SeekFrom::Current(8)).unwrap();
@@ -333,7 +302,7 @@ impl<F: ASSFile> ASS<F> {
             true_branch: bool,
         }
         let mut decisions = Vec::new();
-        let mut cur_data_pos: DataPosition = offsets::global::ROOT_NODE;
+        let mut cur_data_pos: DataPosition = offsets::ROOT_NODE;
         self.file.seek(SeekFrom::Start(cur_data_pos)).unwrap();
         for bit in bits(key) {
             if bit {
@@ -352,7 +321,7 @@ impl<F: ASSFile> ASS<F> {
             });
             cur_data_pos = branch_data_position;
         }
-        let node_pos_pos = self.tell();
+        let node_pos = self.tell();
         self.file.seek(SeekFrom::Current(16)).unwrap();
         let content_block_pos = self.read_u64();
         let previous_value = if content_block_pos == DATA_DOES_NOT_EXIST_POS {
@@ -362,9 +331,9 @@ impl<F: ASSFile> ASS<F> {
             self.dealloc(content_block_pos);
             Some(previous_value)
         };
-        self.file.seek(SeekFrom::Start(node_pos_pos + 16)).unwrap();
+        self.file.seek(SeekFrom::Start(node_pos + 16)).unwrap();
         self.write_u64(DATA_DOES_NOT_EXIST_POS);
-        let mut cur_data_pos = node_pos_pos;
+        let mut cur_data_pos = node_pos;
         while let Some(decision) = decisions.pop() {
             self.file.seek(SeekFrom::Start(cur_data_pos)).unwrap();
             let false_branch_data_pos = self.read_u64();
@@ -391,31 +360,31 @@ impl<F: ASSFile> ASS<F> {
         Lister {
             ass: self,
             plans: vec![Plan {
-                pos: offsets::global::ROOT_NODE,
+                pos: offsets::ROOT_NODE,
                 prev: None,
             }],
         }
     }
     fn open_any(file: F, exists: bool) -> Result<Self, OpeningError> {
-        let mut this = Self { file };
+        let mut ass = Self { file };
         if exists {
             let mut header_buf = [0u8; FILE_HEADER.len()];
-            this.file
+            ass.file
                 .read_exact(&mut header_buf)
                 .map_err(|_| OpeningError::Assless())?;
             if header_buf != FILE_HEADER {
                 return Err(OpeningError::Assless());
             }
         } else {
-            this.file.write_all(&FILE_HEADER).unwrap();
-            this.write_u64(DATA_DOES_NOT_EXIST_POS);
-            this.write_u64(DATA_DOES_NOT_EXIST_POS);
-            this.write_u64(DATA_DOES_NOT_EXIST_POS);
-            this.write_u64(DATA_DOES_NOT_EXIST_POS);
-            this.write_u64(0);
-            this.write_u64(DATA_DOES_NOT_EXIST_POS);
+            ass.file.write_all(&FILE_HEADER).unwrap();
+            ass.write_u64(DATA_DOES_NOT_EXIST_POS);
+            ass.write_u64(DATA_DOES_NOT_EXIST_POS);
+            ass.write_u64(DATA_DOES_NOT_EXIST_POS);
+            ass.write_u64(DATA_DOES_NOT_EXIST_POS);
+            ass.write_u64(0);
+            ass.write_u64(DATA_DOES_NOT_EXIST_POS);
         }
-        Ok(this)
+        Ok(ass)
     }
 }
 
