@@ -61,7 +61,7 @@ impl Plan {
             if prev.true_branch {
                 curbyte |= mask;
             }
-            if curbyte == 0b1000_0000 {
+            if mask == 0b1000_0000 {
                 result.push(curbyte);
                 curbyte = 0;
             }
@@ -349,32 +349,61 @@ impl ASS<std::fs::File> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test() {
-        let file = std::io::Cursor::new(Vec::<u8>::new());
-        fn len(ass: &mut ASS<std::io::Cursor<Vec<u8>>>) -> u64 {
-            ass.file.seek(SeekFrom::End(0)).unwrap()
-        }
-        fn v(b: &[u8]) -> Vec<u8> {
-            Vec::from(b)
-        }
-        let mut ass = ASS { file };
+    fn set_get() -> ASS<impl ASSFile> {
+        let mut ass = ASS { file: std::io::Cursor::new(Vec::new()) };
         ass.init();
-        assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
         assert_eq!(ass.set(b"Drunk", b"Driving"), None);
+        assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
         assert_eq!(ass.get(b"Spongebob"), Some(v(b"Squarewave")));
         assert_eq!(ass.get(b"Drunk"), Some(v(b"Driving")));
         assert_eq!(ass.get(b"DISTONN"), None);
+        ass
+    }
+    #[test]
+    fn test_set_get() {
+        set_get();
+    }
+
+    fn len<F: ASSFile>(ass: &mut ASS<F>) -> u64 {
+        ass.file.seek(SeekFrom::End(0)).unwrap()
+    }
+
+    fn v(b: &[u8]) -> Vec<u8> {
+        Vec::from(b)
+    }
+
+    fn replacing() {
+        let mut ass = set_get();
+
         let old_len = len(&mut ass);
 
-        assert_eq!(ass.set(b"Spongebob", b"Squarepants"), Some(Vec::from(b"Squarewave")));
+        assert_eq!(
+            ass.set(b"Spongebob", b"Squarepants"),
+            Some(Vec::from(b"Squarewave"))
+        );
 
         let new_len = len(&mut ass);
 
         assert_eq!(old_len, new_len - 1);
+    }
+    #[test]
+    fn test_replacing() {
+        replacing();
+    }
 
-        let items: Vec<_> = ass.list().collect();
+    fn listing() {
+        let mut ass = set_get();
 
-        assert_eq!(items, vec![(v(b"Spongebob"), v(b"Squarepants")), (v(b"Drunk"), v(b"Driving"))])
+        assert_eq!(
+            ass.list().collect::<Vec<_>>(),
+            vec![
+                (v(b"Spongebob"), v(b"Squarewave")),
+                (v(b"Drunk"), v(b"Driving"))
+            ]
+        );
+    }
+    #[test]
+    fn test_listing() {
+        listing();
     }
 }
