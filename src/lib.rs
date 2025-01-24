@@ -3,7 +3,9 @@ use std::{
     rc::Rc,
 };
 /*
-Memory structure: root node, blocks
+Memory structure: file header, root node, blocks
+
+"File header" is just the name of the file format
 
 Node structure: 0 branch data pos (nul?), 1 branch data pos (nul?), content block pos (nul?)
 
@@ -11,6 +13,12 @@ Block structure: prev block pos (nul? only in first block), block length, next b
 
 The first block must be present and empty
 */
+
+const FILE_HEADER: [u8; 7] = *b"ASS v1\0";
+mod offsets {
+    pub const ROOT_NODE: u64 = super::FILE_HEADER.len() as u64;
+    pub const BLOCKS: u64 = ROOT_NODE + 24;
+}
 
 type DataPosition = u64;
 type BlockPosition = u64;
@@ -145,7 +153,7 @@ impl<F: ASSFile> ASS<F> {
             return EMPTY_VALUE_BLOCK_POS;
         }
         let data_len: u64 = data.len().try_into().unwrap();
-        self.file.seek(SeekFrom::Start(24)).unwrap();
+        self.file.seek(SeekFrom::Start(offsets::BLOCKS)).unwrap();
         loop {
             let _prev_block_pos = self.read_u64();
             let block_length = self.read_u64();
@@ -231,7 +239,7 @@ impl<F: ASSFile> ASS<F> {
         self.file.seek(SeekFrom::Current(0)).unwrap()
     }
     pub fn get(&mut self, key: &[u8]) -> Option<Vec<u8>> {
-        self.file.seek(SeekFrom::Start(0)).unwrap();
+        self.file.seek(SeekFrom::Start(offsets::ROOT_NODE)).unwrap();
         for bit in bits(key) {
             if bit {
                 self.file.seek(SeekFrom::Current(8)).unwrap();
@@ -253,7 +261,7 @@ impl<F: ASSFile> ASS<F> {
         }
     }
     pub fn set(&mut self, key: &[u8], value: &[u8]) -> Option<Vec<u8>> {
-        self.file.seek(SeekFrom::Start(0)).unwrap();
+        self.file.seek(SeekFrom::Start(offsets::ROOT_NODE)).unwrap();
         for bit in bits(key) {
             if bit {
                 self.file.seek(SeekFrom::Current(8)).unwrap();
@@ -293,7 +301,7 @@ impl<F: ASSFile> ASS<F> {
             true_branch: bool,
         }
         let mut decisions = Vec::new();
-        let mut cur_data_pos: DataPosition = 0;
+        let mut cur_data_pos: DataPosition = offsets::ROOT_NODE;
         self.file.seek(SeekFrom::Start(cur_data_pos)).unwrap();
         for bit in bits(key) {
             if bit {
@@ -347,10 +355,14 @@ impl<F: ASSFile> ASS<F> {
     pub fn list(&mut self) -> Lister<F> {
         Lister {
             ass: self,
-            plans: vec![Plan { pos: 0, prev: None }],
+            plans: vec![Plan {
+                pos: offsets::ROOT_NODE,
+                prev: None,
+            }],
         }
     }
     fn init(&mut self) {
+        self.file.write_all(&FILE_HEADER).unwrap();
         self.write_u64(0);
         self.write_u64(0);
         self.write_u64(0);
@@ -358,22 +370,40 @@ impl<F: ASSFile> ASS<F> {
         self.write_u64(0);
         self.write_u64(0);
     }
+    fn open_any(file: F, exists: bool) -> Result<Self, OpeningError> {
+        let mut this = Self { file };
+        if exists {
+            let mut header_buf = [0u8; FILE_HEADER.len()];
+            this.file
+                .read_exact(&mut header_buf)
+                .map_err(|_| OpeningError::Assless())?;
+            if header_buf != FILE_HEADER {
+                return Err(OpeningError::Assless());
+            }
+        } else {
+            this.init();
+        }
+        Ok(this)
+    }
+}
+
+#[derive(Debug)]
+pub enum OpeningError {
+    /// The file by the given path is not an ASS file of the needed version
+    Assless(),
+    IO(std::io::Error),
 }
 
 impl ASS<std::fs::File> {
-    pub fn open(path: impl AsRef<std::path::Path>) -> Self {
-        let exists = std::fs::exists(&path).unwrap();
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, OpeningError> {
+        let exists = std::fs::exists(&path).map_err(|err| OpeningError::IO(err))?;
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .open(&path)
-            .unwrap();
-        let mut this = Self { file };
-        if !exists {
-            this.init();
-        }
-        this
+            .map_err(|err| OpeningError::IO(err))?;
+        Self::open_any(file, exists)
     }
 }
 
@@ -382,10 +412,7 @@ mod tests {
     use super::*;
 
     fn set_get() -> ASS<impl ASSFile> {
-        let mut ass = ASS {
-            file: std::io::Cursor::new(Vec::new()),
-        };
-        ass.init();
+        let mut ass = ASS::open_any(std::io::Cursor::new(Vec::new()), false).unwrap();
         assert_eq!(ass.set(b"Drunk", b"Driving"), None);
         assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
         assert_eq!(ass.set(b"Drunk", b"Driving"), Some(v(b"Driving")));
@@ -463,7 +490,7 @@ mod tests {
 
         let len_after_addition = len(&mut ass);
 
-        assert_eq!(source_len, len_after_addition - (24*2)*8 - 24 - 4);
+        assert_eq!(source_len, len_after_addition - (24 * 2) * 8 - 24 - 4);
 
         assert_eq!(ass.remove(b"Spongebob1"), Some(v(b"TEST")));
         assert_eq!(ass.remove(b"Spongebob1"), None);
