@@ -420,4 +420,15 @@ mod tests {
     fn test_listing() {
         listing();
     }
+
+    fn removing() {
+        let mut ass = set_get();
+
+        assert_eq!(ass.remove(b"Spongebob"), Some(v(b"Squarewave")));
+        assert_eq!(ass.remove(b"Spongebob"), None);
+    }
+    #[test]
+    fn test_removing() {
+        removing();
+    }
 }
