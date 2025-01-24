@@ -7,7 +7,7 @@ Memory structure: root node, blocks
 
 Node structure: 0 branch data pos (nul?), 1 branch data pos (nul?), content block pos (nul?)
 
-Block structure: prev block pos (nul?), block length, next block pos (nul?)
+Block structure: prev block pos (nul? only in first block), block length, next block pos (nul?)
 
 The first block must be present and empty
 */
@@ -158,8 +158,8 @@ impl<F: ASSFile> ASS<F> {
                     self.write_u64(data_len);
                     self.write_u64(next_block_pos);
                     self.file.write_all(&data).unwrap();
-                    let new_block_pos = data_pos + block_length;
                     self.file.seek(SeekFrom::Start(data_pos - 8)).unwrap();
+                    let new_block_pos = data_pos + block_length;
                     self.write_u64(new_block_pos);
                     if next_block_pos != 0 {
                         self.file.seek(SeekFrom::Start(next_block_pos)).unwrap();
@@ -180,7 +180,11 @@ impl<F: ASSFile> ASS<F> {
         let prev_block_pos = self.read_u64();
         let _block_length = self.read_u64();
         let next_block_pos = self.read_u64();
-        self.file.seek(SeekFrom::Start(prev_block_pos)).unwrap();
+        if next_block_pos != 0 {
+            self.file.seek(SeekFrom::Start(next_block_pos)).unwrap();
+            self.write_u64(prev_block_pos);
+        }
+        self.file.seek(SeekFrom::Start(prev_block_pos + 16)).unwrap();
         self.write_u64(next_block_pos);
     }
     fn read_block(&mut self, pos: BlockPosition) -> Vec<u8> {
@@ -354,6 +358,7 @@ mod tests {
         ass.init();
         assert_eq!(ass.set(b"Drunk", b"Driving"), None);
         assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
+        assert_eq!(ass.set(b"Drunk", b"Driving"), Some(v(b"Driving")));
         assert_eq!(ass.get(b"Spongebob"), Some(v(b"Squarewave")));
         assert_eq!(ass.get(b"Drunk"), Some(v(b"Driving")));
         assert_eq!(ass.get(b"DISTONN"), None);
@@ -375,16 +380,25 @@ mod tests {
     fn replacing() {
         let mut ass = set_get();
 
-        let old_len = len(&mut ass);
+        let len_1 = len(&mut ass);
 
         assert_eq!(
             ass.set(b"Spongebob", b"Squarepants"),
             Some(Vec::from(b"Squarewave"))
         );
 
-        let new_len = len(&mut ass);
+        let len_2 = len(&mut ass);
 
-        assert_eq!(old_len, new_len - 1);
+        assert_eq!(len_1, len_2 - 1);
+
+        assert_eq!(
+            ass.set(b"Spongebob", b"Squarepants"),
+            Some(Vec::from(b"Squarepants"))
+        );
+
+        let len_3 = len(&mut ass);
+
+        assert_eq!(len_2, len_3);
     }
     #[test]
     fn test_replacing() {
