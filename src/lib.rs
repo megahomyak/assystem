@@ -108,8 +108,25 @@ impl<'a, F: ASSFile> Iterator for Lister<'a, F> {
     }
 }
 
-pub trait ASSFile: Write + Read + Seek {}
-impl<T: Write + Read + Seek> ASSFile for T {}
+pub trait ASSFile: Write + Read + Seek {
+    /// Truncates the file at its current position
+    fn truncate(&mut self) -> std::io::Result<()>;
+}
+impl ASSFile for std::io::Cursor<Vec<u8>> {
+    fn truncate(&mut self) -> std::io::Result<()> {
+        let curpos = self.seek(SeekFrom::Current(0)).unwrap();
+        self.get_mut().truncate(curpos.try_into().unwrap());
+        Ok(())
+    }
+}
+impl ASSFile for std::fs::File {
+    fn truncate(&mut self) -> std::io::Result<()> {
+        let curpos = self.seek(SeekFrom::Current(0)).unwrap();
+        self.set_len(curpos)
+    }
+}
+
+const EMPTY_VALUE_BLOCK_POS: u64 = 1;
 
 pub struct ASS<F> {
     file: F,
@@ -125,7 +142,7 @@ impl<F: ASSFile> ASS<F> {
     }
     fn alloc(&mut self, data: &[u8]) -> BlockPosition {
         if data.len() == 0 {
-            return 1;
+            return EMPTY_VALUE_BLOCK_POS;
         }
         let data_len: u64 = data.len().try_into().unwrap();
         self.file.seek(SeekFrom::Start(24)).unwrap();
@@ -173,7 +190,7 @@ impl<F: ASSFile> ASS<F> {
         }
     }
     fn dealloc(&mut self, pos: BlockPosition) {
-        if pos == 1 {
+        if pos == EMPTY_VALUE_BLOCK_POS {
             return;
         }
         self.file.seek(SeekFrom::Start(pos)).unwrap();
@@ -183,12 +200,23 @@ impl<F: ASSFile> ASS<F> {
         if next_block_pos != 0 {
             self.file.seek(SeekFrom::Start(next_block_pos)).unwrap();
             self.write_u64(prev_block_pos);
+        } else {
+            self.file.seek(SeekFrom::Start(prev_block_pos + 8)).unwrap();
+            let prev_block_len = self.read_u64();
+            self.file
+                .seek(SeekFrom::Current(
+                    i64::try_from(prev_block_len).unwrap() + 8,
+                ))
+                .unwrap();
+            self.file.truncate().unwrap();
         }
-        self.file.seek(SeekFrom::Start(prev_block_pos + 16)).unwrap();
+        self.file
+            .seek(SeekFrom::Start(prev_block_pos + 16))
+            .unwrap();
         self.write_u64(next_block_pos);
     }
     fn read_block(&mut self, pos: BlockPosition) -> Vec<u8> {
-        if pos == 1 {
+        if pos == EMPTY_VALUE_BLOCK_POS {
             return Vec::new();
         }
         self.file.seek(SeekFrom::Start(pos)).unwrap();
@@ -354,7 +382,9 @@ mod tests {
     use super::*;
 
     fn set_get() -> ASS<impl ASSFile> {
-        let mut ass = ASS { file: std::io::Cursor::new(Vec::new()) };
+        let mut ass = ASS {
+            file: std::io::Cursor::new(Vec::new()),
+        };
         ass.init();
         assert_eq!(ass.set(b"Drunk", b"Driving"), None);
         assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
@@ -377,7 +407,8 @@ mod tests {
         Vec::from(b)
     }
 
-    fn replacing() {
+    #[test]
+    fn test_replacing() {
         let mut ass = set_get();
 
         let len_1 = len(&mut ass);
@@ -400,12 +431,9 @@ mod tests {
 
         assert_eq!(len_2, len_3);
     }
-    #[test]
-    fn test_replacing() {
-        replacing();
-    }
 
-    fn listing() {
+    #[test]
+    fn test_listing() {
         let mut ass = set_get();
 
         assert_eq!(
@@ -416,19 +444,33 @@ mod tests {
             ]
         );
     }
-    #[test]
-    fn test_listing() {
-        listing();
-    }
 
-    fn removing() {
+    #[test]
+    fn test_removing() {
         let mut ass = set_get();
 
         assert_eq!(ass.remove(b"Spongebob"), Some(v(b"Squarewave")));
         assert_eq!(ass.remove(b"Spongebob"), None);
     }
+
     #[test]
-    fn test_removing() {
-        removing();
+    fn test_branch_reduction() {
+        let mut ass = set_get();
+
+        let source_len = len(&mut ass);
+
+        assert_eq!(ass.set(b"Spongebob1", b"TEST"), None);
+
+        let len_after_addition = len(&mut ass);
+
+        assert_eq!(source_len, len_after_addition - (24*2)*8 - 24 - 4);
+
+        assert_eq!(ass.remove(b"Spongebob1"), Some(v(b"TEST")));
+        assert_eq!(ass.remove(b"Spongebob1"), None);
+        assert_eq!(ass.get(b"Spongebob"), Some(v(b"Squarewave")));
+
+        let len_after_removal = len(&mut ass);
+
+        assert_eq!(source_len, len_after_removal);
     }
 }
