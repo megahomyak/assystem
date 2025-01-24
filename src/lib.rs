@@ -385,8 +385,8 @@ impl<F: ASSFile> ASS<F> {
                 && true_branch_data_pos == DATA_DOES_NOT_EXIST_POS
                 && content_block_pos == DATA_DOES_NOT_EXIST_POS
             {
-                self.file.seek(SeekFrom::Start(decision.pos)).unwrap();
                 self.dealloc(cur_node_pos - sizes::BLOCK);
+                self.file.seek(SeekFrom::Start(decision.pos)).unwrap();
                 if decision.is_true_branch {
                     self.file
                         .seek_relative(offsets::node::TRUE_BRANCH_DATA_POS as i64)
