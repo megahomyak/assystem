@@ -73,11 +73,12 @@ impl Plan {
         result
     }
 }
-pub struct Lister<'a> {
-    ass: &'a mut ASS,
+
+pub struct Lister<'a, F> {
+    ass: &'a mut ASS<F>,
     plans: Vec<Plan>,
 }
-impl<'a> Iterator for Lister<'a> {
+impl<'a, F: ASSFile> Iterator for Lister<'a, F> {
     type Item = (Vec<u8>, Vec<u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -107,10 +108,13 @@ impl<'a> Iterator for Lister<'a> {
     }
 }
 
-pub struct ASS {
-    file: std::fs::File,
+pub trait ASSFile: Write + Read + Seek {}
+impl<T: Write + Read + Seek> ASSFile for T {}
+
+pub struct ASS<F> {
+    file: F,
 }
-impl ASS {
+impl<F: ASSFile> ASS<F> {
     fn write_u64(&mut self, index: u64) {
         self.file.write_all(&index.to_be_bytes()).unwrap();
     }
@@ -308,28 +312,65 @@ impl ASS {
         }
         previous_value
     }
-    pub fn list(&mut self) -> Lister {
+    pub fn list(&mut self) -> Lister<F> {
         Lister {
             ass: self,
             plans: vec![Plan { pos: 0, prev: None }],
         }
     }
-    pub fn open(path: impl AsRef<std::path::Path>) -> Self {
+    fn init(&mut self) {
+        self.write_u64(0);
+        self.write_u64(0);
+        self.write_u64(0);
+        self.write_u64(0);
+        self.write_u64(0);
+        self.write_u64(0);
+    }
+    pub fn open(path: impl AsRef<std::path::Path>) -> ASS<std::fs::File> {
         let exists = std::fs::exists(&path).unwrap();
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open(&path)
             .unwrap();
-        let mut this = Self { file };
+        let mut this = ASS { file };
         if !exists {
-            this.write_u64(0);
-            this.write_u64(0);
-            this.write_u64(0);
-            this.write_u64(0);
-            this.write_u64(0);
-            this.write_u64(0);
+            this.init();
         }
         this
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test() {
+        let file = std::io::Cursor::new(Vec::<u8>::new());
+        fn len(ass: &mut ASS<std::io::Cursor<Vec<u8>>>) -> u64 {
+            ass.file.seek(SeekFrom::End(0)).unwrap()
+        }
+        fn v(b: &[u8]) -> Vec<u8> {
+            Vec::from(b)
+        }
+        let mut ass = ASS { file };
+        ass.init();
+        assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
+        assert_eq!(ass.set(b"Drunk", b"Driving"), None);
+        assert_eq!(ass.get(b"Spongebob"), Some(v(b"Squarewave")));
+        assert_eq!(ass.get(b"Drunk"), Some(v(b"Driving")));
+        assert_eq!(ass.get(b"DISTONN"), None);
+        let old_len = len(&mut ass);
+
+        assert_eq!(ass.set(b"Spongebob", b"Squarepants"), Some(Vec::from(b"Squarewave")));
+
+        let new_len = len(&mut ass);
+
+        assert_eq!(old_len, new_len - 1);
+
+        let items: Vec<_> = ass.list().collect();
+
+        assert_eq!(items, vec![(v(b"Spongebob"), v(b"Squarepants")), (v(b"Drunk"), v(b"Driving"))])
     }
 }
