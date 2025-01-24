@@ -24,7 +24,7 @@ mod offsets {
     pub mod node {
         pub const FALSE_BRANCH_DATA_POS: u64 = 0;
         pub const TRUE_BRANCH_DATA_POS: u64 = FALSE_BRANCH_DATA_POS + 8;
-        pub const CONTENT_BLOCK_POS: u64 = FALSE_BRANCH_DATA_POS + 8;
+        pub const CONTENT_BLOCK_POS: u64 = TRUE_BRANCH_DATA_POS + 8;
     }
 
     pub mod block {
