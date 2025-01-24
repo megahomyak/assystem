@@ -49,7 +49,7 @@ struct Plan {
     pos: u64,
 }
 impl Plan {
-    fn gather(&self) -> Vec<u8> {
+    fn gather_key(&self) -> Vec<u8> {
         let mut result = Vec::new();
 
         let mut curbyte: u8 = 0;
@@ -100,7 +100,7 @@ impl<'a, F: ASSFile> Iterator for Lister<'a, F> {
             }
             let content_block_pos = self.ass.read_u64();
             if content_block_pos != 0 {
-                let key = plan.gather();
+                let key = plan.gather_key();
                 let value = self.ass.read_block(content_block_pos);
                 return Some((key, value));
             }
