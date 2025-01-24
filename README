@@ -1,13 +1,12 @@
 ASSystem is A Storage System that's total ASS. It's a simple key-value storage, as simple as I could make it, stored in a single file. No running daemons, complex APIs or outer dependencies, just plain and simple (and rather dumb) `get`, `insert`, `remove` and `list`.
 
+This doc MAY go out of sync with the codebase. I didn't set up any system for sync because ain't no way I'm fucking with Rust. Please, keep in mind that the only reliable source for how the source code works is the source code itself
+
 === LIMITATIONS ===
 
 This allocator, unfortunately, assumes these things:
 * The database size will never be bigger than 2**64 bytes (which is around 16384 pebibytes) - if it will be, this thing will go into Undefined Behavior
-* There will always be enough storage for extending the database - if there won't be, this thing will just crash
-* There will be no issue with reading or writing - if there will be, this thing will just crash (and will likely leave you with a corrupted database)
-All of these issues should be easily fixable, so it's not a design flaw. The author doesn't want to fix these issues right now because they don't bother him
-
-There's also a possibility of database file corruption if any of the modifying database operations gets interrupted (for example, on a power down or on a sudden disk unavailability). IDK how to work around this one yet
+* There will be no I/O errors when interacting with the database - if there will be, this thing will crash, leaving the database in a corrupted state
+None of these are caused by database design, only by unfortunate implementation specifics
 
 This software is very down-to-earth in general and barely makes any accomodations for unusual situations, so please, use it as a hammer, not as a bulldozer. If you want, you can read the source code and freely extend the software (and you also may ask the dev for help in understanding the software)
