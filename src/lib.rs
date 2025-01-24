@@ -326,14 +326,18 @@ impl<F: ASSFile> ASS<F> {
         self.write_u64(0);
         self.write_u64(0);
     }
-    pub fn open(path: impl AsRef<std::path::Path>) -> ASS<std::fs::File> {
+}
+
+impl ASS<std::fs::File> {
+    pub fn open(path: impl AsRef<std::path::Path>) -> Self {
         let exists = std::fs::exists(&path).unwrap();
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
+            .create(true)
             .open(&path)
             .unwrap();
-        let mut this = ASS { file };
+        let mut this = Self { file };
         if !exists {
             this.init();
         }
