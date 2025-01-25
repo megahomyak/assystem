@@ -10,6 +10,12 @@ This allocator, unfortunately, assumes these things:
 
 This software is very down-to-earth in general and barely makes any accomodations for unusual situations, so please, use it as a hammer, not as a bulldozer. If you want, you can read the source code and freely extend the software (and you also may ask the dev for help in understanding the software)
 
+=== INSTALLATION ===
+
+```
+cargo add assystem
+```
+
 === USAGE ===
 
 Use `assystem::ASS::open` with a readable + writable + seekable buffer, then use `.get`, `.insert`, `.remove` or `.list` on the resulting object
