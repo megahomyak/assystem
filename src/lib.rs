@@ -373,7 +373,9 @@ impl<F: ASSFile> ASS<F> {
             Some(previous_value)
         };
         self.file
-            .seek(SeekFrom::Start(cur_node_pos + offsets::node::CONTENT_BLOCK_POS))
+            .seek(SeekFrom::Start(
+                cur_node_pos + offsets::node::CONTENT_BLOCK_POS,
+            ))
             .unwrap();
         self.write_u64(DATA_DOES_NOT_EXIST_POS);
         while let Some(decision) = decisions.pop() {
@@ -409,9 +411,9 @@ impl<F: ASSFile> ASS<F> {
             }],
         }
     }
-    fn open_any(file: F, exists: bool) -> Result<Self, OpeningError> {
+    fn open_any(file: F, existed: bool) -> Result<Self, OpeningError> {
         let mut ass = Self { file };
-        if exists {
+        if existed {
             let mut header_buf = [0u8; FILE_HEADER.len()];
             ass.file
                 .read_exact(&mut header_buf)
@@ -441,14 +443,23 @@ pub enum OpeningError {
 
 impl ASS<std::fs::File> {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, OpeningError> {
-        let exists = std::fs::exists(&path).map_err(|err| OpeningError::IO(err))?;
-        let file = std::fs::OpenOptions::new()
+        let (file, existed) = match std::fs::OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
             .open(&path)
-            .map_err(|err| OpeningError::IO(err))?;
-        Self::open_any(file, exists)
+        {
+            Ok(file) => (file, true),
+            Err(mut err) => 'result: {
+                if let std::io::ErrorKind::NotFound = err.kind() {
+                    match std::fs::File::create_new(&path) {
+                        Ok(file) => break 'result (file, false),
+                        Err(new_err) => err = new_err,
+                    }
+                }
+                return Err(OpeningError::IO(err));
+            }
+        };
+        Self::open_any(file, existed)
     }
 }
 
