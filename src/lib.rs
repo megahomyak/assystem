@@ -101,7 +101,7 @@ impl Task {
 }
 
 pub struct Lister<'a, F> {
-    ass: &'a mut AnyASS<F>,
+    ass: &'a mut ASS<F>,
     tasks: Vec<Task>,
 }
 impl<'a, F: ASSFile> Iterator for Lister<'a, F> {
@@ -155,10 +155,10 @@ impl ASSFile for std::fs::File {
 const EMPTY_VALUE_BLOCK_POS: u64 = 1;
 const DATA_DOES_NOT_EXIST_POS: u64 = 0;
 
-pub struct AnyASS<F> {
+pub struct ASS<F> {
     file: F,
 }
-impl<F: ASSFile> AnyASS<F> {
+impl<F: ASSFile> ASS<F> {
     fn write_u64(&mut self, index: u64) {
         self.file.write_all(&index.to_be_bytes()).unwrap();
     }
@@ -411,17 +411,17 @@ impl<F: ASSFile> AnyASS<F> {
             }],
         }
     }
-    fn open_any(file: F, existed: bool) -> Result<Self, OpeningError> {
-        let mut ass = Self { file };
-        if existed {
-            let mut header_buf = [0u8; FILE_HEADER.len()];
-            ass.file
-                .read_exact(&mut header_buf)
-                .map_err(|_| OpeningError::Assless())?;
-            if header_buf != FILE_HEADER {
-                return Err(OpeningError::Assless());
+    pub fn open(mut file: F) -> Result<Self, OpeningError> {
+        file.seek(SeekFrom::Start(0)).unwrap();
+        let is_empty = match file.read_exact(&mut [0]) {
+            Ok(()) => {
+                file.seek(SeekFrom::Start(0)).unwrap();
+                false
             }
-        } else {
+            Err(_) => true,
+        };
+        let mut ass = Self { file };
+        if is_empty {
             ass.file.write_all(&FILE_HEADER).unwrap();
             ass.write_u64(DATA_DOES_NOT_EXIST_POS);
             ass.write_u64(DATA_DOES_NOT_EXIST_POS);
@@ -429,6 +429,14 @@ impl<F: ASSFile> AnyASS<F> {
             ass.write_u64(DATA_DOES_NOT_EXIST_POS);
             ass.write_u64(0);
             ass.write_u64(DATA_DOES_NOT_EXIST_POS);
+        } else {
+            let mut header_buf = [0u8; FILE_HEADER.len()];
+            ass.file
+                .read_exact(&mut header_buf)
+                .map_err(|_| OpeningError::Assless())?;
+            if header_buf != FILE_HEADER {
+                return Err(OpeningError::Assless());
+            }
         }
         Ok(ass)
     }
@@ -441,42 +449,12 @@ pub enum OpeningError {
     IO(std::io::Error),
 }
 
-pub type ASS = AnyASS<std::fs::File>;
-
-impl ASS {
-    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, OpeningError> {
-        let (file, existed) = match std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
-        {
-            Ok(file) => (file, true),
-            Err(mut err) => 'result: {
-                if let std::io::ErrorKind::NotFound = err.kind() {
-                    match std::fs::OpenOptions::new()
-                        .read(true)
-                        .write(true)
-                        .create_new(true)
-                        .open(&path)
-                    {
-                        Ok(file) => break 'result (file, false),
-                        Err(new_err) => err = new_err,
-                    }
-                }
-                return Err(OpeningError::IO(err));
-            }
-        };
-        Self::open_any(file, existed)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn set_get() -> AnyASS<impl ASSFile> {
-        let mut ass = AnyASS::open("ass.ass").unwrap();
-        //let mut ass = ASS::open_any(std::io::Cursor::new(Vec::new()), false).unwrap();
+    fn set_get() -> ASS<impl ASSFile> {
+        let mut ass = ASS::open(std::io::Cursor::new(Vec::new())).unwrap();
         assert_eq!(ass.set(b"Drunk", b"Driving"), None);
         assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
         assert_eq!(ass.set(b"Drunk", b"Driving"), Some(v(b"Driving")));
@@ -490,7 +468,7 @@ mod tests {
         set_get();
     }
 
-    fn len<F: ASSFile>(ass: &mut AnyASS<F>) -> u64 {
+    fn len<F: ASSFile>(ass: &mut ASS<F>) -> u64 {
         ass.file.seek(SeekFrom::End(0)).unwrap()
     }
 
