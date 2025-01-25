@@ -5,8 +5,8 @@ This doc MAY go out of sync with the codebase. I didn't set up any system for sy
 === LIMITATIONS ===
 
 This allocator, unfortunately, assumes these things:
-* The database size will never be bigger than 2**64 bytes (which is around 16384 pebibytes) - if it will be, this thing will go into Undefined Behavior
+* The database size will never be bigger than 2**64 bytes (which is around 16384 pebibytes) - if it will be, this thing will go into Undefined Behavior. Not by design, it's only an implementation flaw
 * There will be no I/O errors when interacting with the database - if there will be, this thing will crash, leaving the database in a corrupted state
-None of these are caused by database design, only by unfortunate implementation specifics
+* No concurrent access - while I try to prevent it, concurrent reads and writes can still mess up the database. By design
 
 This software is very down-to-earth in general and barely makes any accomodations for unusual situations, so please, use it as a hammer, not as a bulldozer. If you want, you can read the source code and freely extend the software (and you also may ask the dev for help in understanding the software)

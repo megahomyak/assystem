@@ -101,7 +101,7 @@ impl Task {
 }
 
 pub struct Lister<'a, F> {
-    ass: &'a mut ASS<F>,
+    ass: &'a mut AnyASS<F>,
     tasks: Vec<Task>,
 }
 impl<'a, F: ASSFile> Iterator for Lister<'a, F> {
@@ -155,10 +155,10 @@ impl ASSFile for std::fs::File {
 const EMPTY_VALUE_BLOCK_POS: u64 = 1;
 const DATA_DOES_NOT_EXIST_POS: u64 = 0;
 
-pub struct ASS<F> {
+pub struct AnyASS<F> {
     file: F,
 }
-impl<F: ASSFile> ASS<F> {
+impl<F: ASSFile> AnyASS<F> {
     fn write_u64(&mut self, index: u64) {
         self.file.write_all(&index.to_be_bytes()).unwrap();
     }
@@ -441,7 +441,9 @@ pub enum OpeningError {
     IO(std::io::Error),
 }
 
-impl ASS<std::fs::File> {
+pub type ASS = AnyASS<std::fs::File>;
+
+impl ASS {
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, OpeningError> {
         let (file, existed) = match std::fs::OpenOptions::new()
             .read(true)
@@ -451,7 +453,12 @@ impl ASS<std::fs::File> {
             Ok(file) => (file, true),
             Err(mut err) => 'result: {
                 if let std::io::ErrorKind::NotFound = err.kind() {
-                    match std::fs::File::create_new(&path) {
+                    match std::fs::OpenOptions::new()
+                        .read(true)
+                        .write(true)
+                        .create_new(true)
+                        .open(&path)
+                    {
                         Ok(file) => break 'result (file, false),
                         Err(new_err) => err = new_err,
                     }
@@ -467,8 +474,9 @@ impl ASS<std::fs::File> {
 mod tests {
     use super::*;
 
-    fn set_get() -> ASS<impl ASSFile> {
-        let mut ass = ASS::open_any(std::io::Cursor::new(Vec::new()), false).unwrap();
+    fn set_get() -> AnyASS<impl ASSFile> {
+        let mut ass = AnyASS::open("ass.ass").unwrap();
+        //let mut ass = ASS::open_any(std::io::Cursor::new(Vec::new()), false).unwrap();
         assert_eq!(ass.set(b"Drunk", b"Driving"), None);
         assert_eq!(ass.set(b"Spongebob", b"Squarewave"), None);
         assert_eq!(ass.set(b"Drunk", b"Driving"), Some(v(b"Driving")));
@@ -482,7 +490,7 @@ mod tests {
         set_get();
     }
 
-    fn len<F: ASSFile>(ass: &mut ASS<F>) -> u64 {
+    fn len<F: ASSFile>(ass: &mut AnyASS<F>) -> u64 {
         ass.file.seek(SeekFrom::End(0)).unwrap()
     }
 
