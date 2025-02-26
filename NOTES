@@ -1,0 +1,18 @@
+Potential simplification:
+
+* Allow to list any node
+* Make it a set instead of a map. That is, just use trees for everything <- POTENTIAL HUGE DATA WASTE unless optimizations are applied, which I, of course, am not going to do
+
+a/b/c/data_here <- key: "a/b/c/", data: "data_here"
+
+Result: methods:
+* list(beginning) -> Vec<continuations> OR Vec<full nodes> <- the former one will allow for quick data retrieval, there will be no need to strip the key out. LIST BREADTH FIRST SO IT WILL BE POSSIBLE TO JUST GET THE TOP-LEVEL KEYS, this is for dictionary listing
+* remove(full key) -> bool ("was it actually removed")
+* add(full key) -> nil
+* check(full key) -> bool ("was it actually there")
+
+OR, alternatively, with transactions:
+* list(beginning) -> Vec<continuation> # Same
+* remove(full key) -> nil
+* add(full key) -> nil
+* check(full key) -> bool
